@@ -10,163 +10,24 @@ import logging as log
 import os
 import numpy as np
 from matplotlib.collections import LineCollection as LC
+from Modules import Phylogeny as phylo
+
 ### CORE VARS ###
 _supported_tree_filetypes = [".dnd"]
 
-### CLASSES ###
-class Tree():
-    def __init__(self,raw,name):
-        """
-        Builds the tree given the raw input
-        :param raw: string, either filename or a raw input of the data in tuples.
-        :type raw: str or tuple
-        """
-        ### Intro Logging ###
-        log.debug("BioPython:Phylogenetics:Tree:__init__:DEBUG: Creating Tree(%s)"%raw)
-
-        ### Sanitizing input ###
-        if isinstance(raw,str):
-            # This should be a filetype
-            log.debug("BioPython:Phylogenetics:Tree:__init__:DEBUG: 'raw' was type (str), attempting to read file at %s."%raw)
-            if os.path.isfile(raw) and raw[-4:] in _supported_tree_filetypes:
-                # This is a valid tree
-                log.debug("BioPython:Phylogenetics:Tree:__init__:DEBUG: Found file %s with extension %s. Attempting read."%(raw,raw[:-4]))
-                self.tree = read_tree(raw)
-            else:
-                # This is not a valid tree file
-                log.error("BioPython:Phylogenetics:Tree:__init__:ERROR: File %s was not recognized as either a file or a valid extension. CONSTRUCTION FAILED.")
-                del self
-        elif isinstance(raw,tuple):
-            # This should be a valid raw input
-            log.debug("BioPython:Phylogenetics:Tree:__init__:DEBUG: 'raw' was type (tuple), attempting to construct from raw.")
-            self.tree = format_list(read_string(raw))# Building the tree variable
-        else:
-            log.error("BioPython:Phylogenetics:Tree:__init__:ERROR: Failed to recognize input 'raw' of type %s. CONSTRUCTION FAILED."%type(raw))
-            del self
-
-        ### Generating Data ###
-        self.leaves = self.read_leaves()
-        self.name = name
-
-
-    def read_leaves(self):
-        # Reads the leaves of the input
-        return read_leaves(self.tree)
-
-    def plot_tree(self,save=True,labels=True,text_offset = 0.01):
-        """
-        Plots the phylogenetic tree.
-        :param save: True to save, False to show
-        :param labels: True to show labels on the leaves.
-        :return: None
-        """
-        # Intro logging
-        log.debug('BioPython:Phylogenetics:Tree:plot_tree:DEBUG: Plotting tree of %s')
-
-        # Building the figure
-        fig = plt.figure()
-        ax1 = fig.add_subplot(111)
-
-
-        # Computing the line segments
-        lines = compute_segments(self.tree)
-
-        ax1.add_collection(LC(lines[0]+lines[1]))
-
-        if labels:
-            # We are actually going to add labels
-            for index,label in enumerate(self.leaves):
-                ax1.text(float(lines[2][index][0])*(1+text_offset),lines[2][index][1],label)
-
-        ax1.autoscale()
-        plt.show()
+### SUB PROCESSES ###
+def get_random_colors(n: int, name: str = "hsv") -> np.array:
+    """
+    Returns an array of HSV colors evenly distributed over n values.
+    :param n: The number of values to use in the array
+    :param name: The name of the colormap to use
+    :return: Array containing colors.
+    """
+    return [plt.cm.get_cmap(name, n)(i) for i in range(n)]
 
 
 
 ### CORE FUNCTIONS ###
-def read_tree(filepath:str)->tuple:
-    """
-    Reads a .dnd file and returns a tree
-    :param filepath: The filepath to open.
-    :return: The tree in the correct format as a tuple.
-    """
-    # Intro Logging #
-    log.debug('BioPython:Phylogenetics:read_tree:DEBUG: Reading tree from %s.'%filepath)
-
-    # Grabbing the data #
-    with open(filepath,"r+") as file:
-        data = file.read()
-
-    return format_list(read_string(data))
-
-def read_string(string,recursion_number=0) -> list:
-    """
-    Reads the string and converts it to the correct tuple format. This is done as follows:
-
-    1. Remove redundant parenthesis and split on ":" if necessary
-    :param string: The input string.
-    :return: Tuple of the correct format.
-    """
-    # Intro Logging #
-    log.debug("BioPython:Phylogenetics:read_string:DEBUG: Recursion: %s; string: %s."%(recursion_number,string))
-
-
-    if recursion_number == 0:
-        # We need to manage the header.
-        temp_string = string[1:-2] # Removing the ( .... ); from the outsides of the file.
-        print(temp_string)
-        working_string = temp_string # setting the working string.
-        
-        # spliting on delimiter
-        lst = find_correct_comma(working_string) # break by the correct ","
-        
-        for index,element in enumerate(lst):
-            if element[0] == "(": # we have more work to do
-                lst[index] = read_string(element,recursion_number=recursion_number+1)
-            else:
-                lst[index] = element.split(":")
-
-        return lst
-    else:
-        # we need to manage normal body.
-        temp_string = string.rsplit(":",1) # Splits on the last occurrence of the colon.
-
-        # Managing parenthesis
-        if temp_string[0][0]+temp_string[0][-1] == "()":
-            temp_string[0] = temp_string[0][1:-1]
-        
-        temp_string[0] = find_correct_comma(temp_string[0])
-
-        for index,element in enumerate(temp_string[0]):
-            if element[0] == "(": # we have more work to do
-                temp_string[0][index] = read_string(element,recursion_number=recursion_number+1)
-            else:
-                temp_string[0][index] = element.split(":")
-
-        return temp_string
-
-def format_list(inp_list:list,recursion_number:int = 0)->tuple:
-    """
-    Re-formats the tree list into a tuple form.
-    :param inp_list: The input list to work with.
-    :return: Returns the tuple form of the tree.
-    """
-    # Intro logging
-    log.debug("BioPython:Phylogenetics:format_list:DEBUG: Formatting list %s. (recursion number=%s)."%(inp_list,recursion_number))
-
-
-    for index,element in enumerate(inp_list):
-       if isinstance(element,list): # the constituent elements are lists
-           if isinstance(element[0],str): # The first element is a string ---> this is a base level.
-               inp_list[index] = tuple(element)
-           else:
-               inp_list[index] = tuple(format_list(element,recursion_number=recursion_number+1))
-
-    return tuple(inp_list)
-
-
-
-
 
 def read_leaves(tree:tuple,recursion_number=0)->list:
     """
@@ -176,6 +37,8 @@ def read_leaves(tree:tuple,recursion_number=0)->list:
     :return: list of leaf names.
     """
     log.debug("BioPython:Phylogenetics:read_leaves:DEBUG: Recursion: %s; Tree: %s."%(recursion_number,tree))
+    if isinstance(tree,str):
+        return [tree]
     output_list = [] # Create blank storage list.
     for element in tree:
         if isinstance(element[0],(str)): # is the element a string or an int?
@@ -185,27 +48,8 @@ def read_leaves(tree:tuple,recursion_number=0)->list:
 
     return output_list
 
-def find_correct_comma(string):
-    """
-    Finds the comma that isn't wrapped by parenthesis
-    :param string: The string to split.
-    :return: split case.
-    """
-    array = np.array([char for char in string])
-    comma_locations = np.where(array==",")[0]
 
-    splits = []
-    for comma_loc in comma_locations:
-        if len(np.where(array[:comma_loc]=="(")[0]) == len(np.where(array[:comma_loc]==")")[0]):
-            splits.append(comma_loc)
-
-    return [string[:splits[0]]]+[string[splits[i]+1:splits[i+1]] for i in range(0,len(splits)-1)] + [string[splits[-1]+1:]]
-
-
-### COMPUTATION FUNCTIONS ###
-
-
-def compute_segments(tup,origin=(0,0),recursion_number = 0,w_unit=1,v_unit=1):
+def compute_segments(tup,origin=(0,0),recursion_number = 0,w_unit=1,v_unit=1,clades=None,clade_colors=None):
     """
     Computes the vertical and horizontal lines for the given tree
     :param tup: The tree object to pass through the function.
@@ -220,6 +64,49 @@ def compute_segments(tup,origin=(0,0),recursion_number = 0,w_unit=1,v_unit=1):
     vertical_lines = [] # vertical lines are added as (line). Line has format [(x_0,y_0),(x_1,y_1)]
     horizontal_lines = [] # The horizontal lines are added.
     branch_endpoints = [] # Markers for the branch end points.
+    vcolors = []
+    hcolors = []
+
+    # grabbing leaves
+    tup_leaves = read_leaves(tup)
+
+    # Computing clades list
+    if clades:
+        """
+        We have been given clades, so we will use clade coloring. This works as follows:
+        
+        If all of the leaves in this tuple are a part of the clade, then the whole set of lines is colored the clade_coloring.
+        
+        If not, we check each future branch and color it if possible. Finally, each other branch is colored black.
+        
+        """
+        clade_leaves = [clade.leaves for clade in clades]
+        if any(all(leaf in clade_leaf for leaf in tup_leaves) for clade_leaf in clade_leaves):
+            # There is a tuple wide match
+            index = [tup_leaves[0] in clade_leaf for clade_leaf in clade_leaves].index(True)
+
+            tuple_color = clade_colors[index]
+        else:
+            tuple_color = None
+
+        # Now we check if the tuple color failed. If it did, we need to check element by element.
+        if not tuple_color:
+            branch_colors = []
+            for element in tup:
+                element_leaves = read_leaves(element[0])
+                if any(all(leaf in clade_leaf for leaf in element_leaves) for clade_leaf in clade_leaves):
+                    # There is a tuple wide match
+                    index = [element_leaves[0] in clade_leaf for clade_leaf in clade_leaves].index(True)
+
+                    branch_colors.append(clade_colors[index])
+                else:
+                    branch_colors.append("black")
+        else:
+            branch_colors = [tuple_color for element in tup]
+    else:
+        tuple_color = None
+        branch_colors = ["black" for element in tup]
+
 
     # Computing leaves remaining
     leaf_counts = []
@@ -233,6 +120,10 @@ def compute_segments(tup,origin=(0,0),recursion_number = 0,w_unit=1,v_unit=1):
     # Creating the vertical line
     v_line_length = sum(leaf_counts) # This gives the height of the vertical line.
     vertical_lines.append([(origin[0],origin[1]+(v_line_length/2) - 0.5*(leaf_counts[-1])),(origin[0],origin[1]-(v_line_length/2)+0.5*(leaf_counts[0]))])
+    if tuple_color:
+        vcolors.append(tuple_color)
+    else:
+        vcolors.append("black")
 
     # Computing offsets
     v_offsets = [origin[1]-(v_line_length/2)+ sum(leaf_counts[:j]) + 0.5*leaf_counts[j] for j in range(len(leaf_counts))]
@@ -241,14 +132,18 @@ def compute_segments(tup,origin=(0,0),recursion_number = 0,w_unit=1,v_unit=1):
         branch_length = float(element[1])
         horizontal_lines.append([(origin[0],v_offsets[index]),
                                  (origin[0]+branch_length,v_offsets[index])])
+        hcolors.append(branch_colors[index])
 
         if not isinstance(element[0],str):
-            new_lines = compute_segments(element[0],origin=(origin[0]+branch_length,v_offsets[index]),recursion_number=recursion_number+1)
+            new_lines = compute_segments(element[0],origin=(origin[0]+branch_length,v_offsets[index]),recursion_number=recursion_number+1,clades=clades,clade_colors=clade_colors)
             vertical_lines += new_lines[0]
             horizontal_lines += new_lines[1]
             branch_endpoints += new_lines[2]
+            vcolors += new_lines[3]
+            hcolors += new_lines[4]
         else:
             branch_endpoints.append((origin[0]+branch_length,v_offsets[index]))
+
 
     ### Managing unit changes
     vertical_lines = [[(u[0][0]*w_unit,u[0][1]*v_unit),(u[1][0]*w_unit,u[1][1]*v_unit)] for u in vertical_lines]
@@ -256,7 +151,7 @@ def compute_segments(tup,origin=(0,0),recursion_number = 0,w_unit=1,v_unit=1):
                       horizontal_lines]
     branch_endpoints = [(u[0]*w_unit,u[1]*v_unit) for u in branch_endpoints]
 
-    return [vertical_lines,horizontal_lines,branch_endpoints]
+    return [vertical_lines,horizontal_lines,branch_endpoints,vcolors,hcolors]
 
 
 
@@ -264,10 +159,66 @@ def compute_segments(tup,origin=(0,0),recursion_number = 0,w_unit=1,v_unit=1):
 
 
 ### VISUALIZATION FUNCTIONS ###
+def plot_tree(tree,
+              save=True,
+              labels=True,
+              text_offset=0.01,
+              colormode="CLADES",
+              clade_point=0.0001,
+              include_clade_line=True):
+    """
+    Plots the phylogenetic tree.
+    :param save: True to save, False to show
+    :param labels: True to show labels on the leaves.
+    :return: None
+    """
+    # Intro logging
+    log.debug('BioPython:Phylogenetics:Tree:plot_tree:DEBUG: Plotting tree of %s')
+    # Building the figure
+    fig = plt.figure()
+    ax1 = fig.add_subplot(111)
 
+    # Computing the line segments
+    if colormode == "CLADES":
+        clds = tree.find_clades(clade_point)
+        if clds:
+            lines = compute_segments(tree.tree,clades=clds,clade_colors=get_random_colors(len(clds)))
+        else:
+            lines = compute_segments(tree.tree)
+    else:
+        lines = compute_segments(tree.tree)
+
+    xs = [lines[0][i][1][0] for i in range(len(lines[0]))] + [lines[1][i][1][0] for i in range(len(lines[1]))]
+    ys = [lines[0][i][1][1] for i in range(len(lines[0]))] + [lines[1][i][1][1] for i in range(len(lines[1]))]
+    ax1.add_collection(LC(lines[0] + lines[1],colors=lines[3]+lines[4]))
+    ## Managing spines and tick marks
+    ax1.spines[:].set_visible(False)
+    ax1.set_yticklabels([])
+    ax1.set_yticks([])
+    ax1.set_xticks([])
+    ax1.set_xticklabels([])
+
+    ## Managing Clade Line ##
+    if include_clade_line:
+        ax1.vlines(x=clade_point,ymin=np.amin(ys)*1.1,ymax=np.amax(ys)*1.1,color="r",ls=":")
+    ## Adding arrow
+    ax1.arrow(0, np.amin(ys) * (1.1), np.amax(xs) * (1.1), 0, hatch="+",
+              head_width=(np.abs(np.amax(ys) - np.amin(ys)) / 50),
+              head_length=np.abs(np.amax(xs) - np.amin(xs)) / 100, length_includes_head=False, fill=True,
+              facecolor="k")
+    ## Managing text
+    ax1.set_title("Phylogenetic Tree of %s" % tree.name)
+    ax1.set_xlabel("Genetic Distance Measurement")
+    if labels:
+        # We are actually going to add labels
+        for index, label in enumerate(tree.leaves):
+            ax1.text(float(lines[2][index][0]) * (1 + text_offset), lines[2][index][1], label)
+    ax1.autoscale()
+    plt.show()
 
 
 if __name__ == '__main__':
     #log.basicConfig(level=log.DEBUG)
-    t = Tree("/home/ediggins/BioInformatics/BioPython/tree.dnd",name="test")
-    t.plot_tree()
+    #t = phylo.Tree("/home/ediggins/BioInformatics/BioPython/tree.dnd",name="test")
+    t = phylo.Tree("/media/Mercury/SRR_SALMONELLA_FILES/salmonella.dnd",name="test")
+    plot_tree(t,clade_point=0.00003,labels=False)
