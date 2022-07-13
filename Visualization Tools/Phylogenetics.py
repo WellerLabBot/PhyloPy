@@ -11,6 +11,7 @@ import os
 import numpy as np
 from matplotlib.collections import LineCollection as LC
 from Modules import Phylogeny as phylo
+import pandas as pd
 
 ### CORE VARS ###
 _supported_tree_filetypes = [".dnd"]
@@ -49,7 +50,13 @@ def read_leaves(tree:tuple,recursion_number=0)->list:
     return output_list
 
 
-def compute_segments(tup,origin=(0,0),recursion_number = 0,w_unit=1,v_unit=1,clades=None,clade_colors=None):
+def compute_segments(tup,
+                     origin=(0,0),
+                     recursion_number = 0,
+                     w_unit=1,
+                     v_unit=1,
+                     clades=None,
+                     clade_colors=None):
     """
     Computes the vertical and horizontal lines for the given tree
     :param tup: The tree object to pass through the function.
@@ -63,24 +70,27 @@ def compute_segments(tup,origin=(0,0),recursion_number = 0,w_unit=1,v_unit=1,cla
     # Creating data holders
     vertical_lines = [] # vertical lines are added as (line). Line has format [(x_0,y_0),(x_1,y_1)]
     horizontal_lines = [] # The horizontal lines are added.
-    branch_endpoints = [] # Markers for the branch end points.
-    vcolors = []
-    hcolors = []
+    branch_endpoints = {} # Markers for the branch end points.
+    vcolors = [] # The holder for the vertical line colors.
+    hcolors = [] # The holder for the horizontal line colors.
 
     # grabbing leaves
     tup_leaves = read_leaves(tup)
 
     # Computing clades list
     if clades:
-        """
-        We have been given clades, so we will use clade coloring. This works as follows:
+        ###
+        #       We have been given clades, so we will use clade coloring. This works as follows:
+        #
+        #       If all of the leaves in this tuple are a part of the clade, then the whole set of lines is colored the clade_coloring.
+        #
+        #       If not, we check each future branch and color it if possible. Finally, each other branch is colored black.
+        #
+        ####
+        ### Managing tuple size clades
         
-        If all of the leaves in this tuple are a part of the clade, then the whole set of lines is colored the clade_coloring.
+        clade_leaves = [clade.leaves for clade in clades] # grabbing clade leaves
         
-        If not, we check each future branch and color it if possible. Finally, each other branch is colored black.
-        
-        """
-        clade_leaves = [clade.leaves for clade in clades]
         if any(all(leaf in clade_leaf for leaf in tup_leaves) for clade_leaf in clade_leaves):
             # There is a tuple wide match
             index = [tup_leaves[0] in clade_leaf for clade_leaf in clade_leaves].index(True)
@@ -138,18 +148,18 @@ def compute_segments(tup,origin=(0,0),recursion_number = 0,w_unit=1,v_unit=1,cla
             new_lines = compute_segments(element[0],origin=(origin[0]+branch_length,v_offsets[index]),recursion_number=recursion_number+1,clades=clades,clade_colors=clade_colors)
             vertical_lines += new_lines[0]
             horizontal_lines += new_lines[1]
-            branch_endpoints += new_lines[2]
+            branch_endpoints = new_lines[2] | branch_endpoints
             vcolors += new_lines[3]
             hcolors += new_lines[4]
         else:
-            branch_endpoints.append((origin[0]+branch_length,v_offsets[index]))
+            branch_endpoints[element[0]] = (origin[0]+branch_length,v_offsets[index])
 
 
     ### Managing unit changes
     vertical_lines = [[(u[0][0]*w_unit,u[0][1]*v_unit),(u[1][0]*w_unit,u[1][1]*v_unit)] for u in vertical_lines]
     horizontal_lines = [[(u[0][0] * w_unit, u[0][1] * v_unit), (u[1][0] * w_unit, u[1][1] * v_unit)] for u in
                       horizontal_lines]
-    branch_endpoints = [(u[0]*w_unit,u[1]*v_unit) for u in branch_endpoints]
+    branch_endpoints = {u:(branch_endpoints[u][0]*w_unit,branch_endpoints[u][1]*v_unit) for u in branch_endpoints}
 
     return [vertical_lines,horizontal_lines,branch_endpoints,vcolors,hcolors]
 
@@ -160,12 +170,14 @@ def compute_segments(tup,origin=(0,0),recursion_number = 0,w_unit=1,v_unit=1,cla
 
 ### VISUALIZATION FUNCTIONS ###
 def plot_tree(tree,
-              save=True,
+              axes,
               labels=True,
               text_offset=0.01,
               colormode="CLADES",
               clade_point=0.0001,
-              include_clade_line=True):
+              include_clade_line=True,
+              continent_of_origin_file=None,
+              right_edge=None):
     """
     Plots the phylogenetic tree.
     :param save: True to save, False to show
@@ -174,9 +186,11 @@ def plot_tree(tree,
     """
     # Intro logging
     log.debug('BioPython:Phylogenetics:Tree:plot_tree:DEBUG: Plotting tree of %s')
+
     # Building the figure
-    fig = plt.figure()
-    ax1 = fig.add_subplot(111)
+    if axes == None:
+        fig = plt.figure()
+        axes = fig.add_subplot(111)
 
     # Computing the line segments
     if colormode == "CLADES":
@@ -190,35 +204,67 @@ def plot_tree(tree,
 
     xs = [lines[0][i][1][0] for i in range(len(lines[0]))] + [lines[1][i][1][0] for i in range(len(lines[1]))]
     ys = [lines[0][i][1][1] for i in range(len(lines[0]))] + [lines[1][i][1][1] for i in range(len(lines[1]))]
-    ax1.add_collection(LC(lines[0] + lines[1],colors=lines[3]+lines[4]))
+    axes.add_collection(LC(lines[0] + lines[1],colors=lines[3]+lines[4]))\
+
+
     ## Managing spines and tick marks
-    ax1.spines[:].set_visible(False)
-    ax1.set_yticklabels([])
-    ax1.set_yticks([])
-    ax1.set_xticks([])
-    ax1.set_xticklabels([])
+    axes.spines[:].set_visible(False)
+    axes.set_yticklabels([])
+    axes.set_yticks([])
+    axes.set_xticks([])
+    axes.set_xticklabels([])
 
     ## Managing Clade Line ##
     if include_clade_line:
-        ax1.vlines(x=clade_point,ymin=np.amin(ys)*1.1,ymax=np.amax(ys)*1.1,color="r",ls=":")
+        axes.vlines(x=clade_point,ymin=np.amin(ys)*1.1,ymax=np.amax(ys)*1.1,color="r",ls=":")
     ## Adding arrow
-    ax1.arrow(0, np.amin(ys) * (1.1), np.amax(xs) * (1.1), 0, hatch="+",
+    axes.arrow(0, np.amin(ys) * (1.1), np.amax(xs) * (1.1), 0, hatch="+",
               head_width=(np.abs(np.amax(ys) - np.amin(ys)) / 50),
               head_length=np.abs(np.amax(xs) - np.amin(xs)) / 100, length_includes_head=False, fill=True,
               facecolor="k")
+
+    ## Country of origin management ##
+
+    ###
+    #
+    # If a file is submitted via this kwarg, we plot the country of origin next to each of the corresponding endpoints.
+    #
+    ###
+    if continent_of_origin_file:
+        if os.path.isfile(continent_of_origin_file):
+            dataframe = pd.read_csv(continent_of_origin_file)
+
+            country_of_origin = {asc:dataframe.loc[dataframe["asc"]==asc,"continent"].values for asc in tree.leaves}
+
+            coo_options = list(set(list(dataframe["continent"])))
+            cmap = get_random_colors(len(coo_options),name="hsv")
+            coo_colors = {coo_options[j]:cmap[j] for j in range(len(coo_options))}
+
+            if not right_edge:
+                right_edge = np.max(xs)*1.1
+
+            lines = [[(lines[2][asc][0],lines[2][asc][1]),(right_edge,lines[2][asc][1])] for asc in tree.leaves]
+            colors = [coo_colors[country_of_origin[asc][0]] if len(country_of_origin[asc]) else "black" for asc in tree.leaves]
+
+            axes.add_collection(LC(lines,colors=colors))
+
+            print(country_of_origin)
     ## Managing text
-    ax1.set_title("Phylogenetic Tree of %s" % tree.name)
-    ax1.set_xlabel("Genetic Distance Measurement")
+    axes.set_title("Phylogenetic Tree of %s" % tree.name)
+    axes.set_xlabel("Genetic Distance Measurement")
     if labels:
         # We are actually going to add labels
         for index, label in enumerate(tree.leaves):
-            ax1.text(float(lines[2][index][0]) * (1 + text_offset), lines[2][index][1], label)
-    ax1.autoscale()
+            axes.text(float(lines[2][label][0]) * (1 + text_offset), lines[2][label][1], label)
+    axes.autoscale()
     plt.show()
+
 
 
 if __name__ == '__main__':
     #log.basicConfig(level=log.DEBUG)
     #t = phylo.Tree("/home/ediggins/BioInformatics/BioPython/tree.dnd",name="test")
     t = phylo.Tree("/media/Mercury/SRR_SALMONELLA_FILES/salmonella.dnd",name="test")
-    plot_tree(t,clade_point=0.00003,labels=False)
+    fig = plt.figure()
+    axes = fig.add_subplot(111)
+    plot_tree(t,axes=axes,clade_point=0.00003,labels=False,continent_of_origin_file="/home/ediggins/BioInformatics/BioPython/Datasets/test.csv")

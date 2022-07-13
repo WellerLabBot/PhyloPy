@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 import logging as log
 import os
 import numpy as np
+import pandas as pd
+import json
 from matplotlib.collections import LineCollection as LC
 
 ### CORE VARS ###
@@ -69,7 +71,31 @@ class Tree():
         self.clades = recur_clades(self.tree,target_distance=distance)
         return self.clades
 
+### Sub Functions ###
+def find_continents_from_country(countries:list,dataset_location:str)->list:
+    """
+    Converts all of the countries into their respective continents.
+    :param countries: The list of countries to search for.
+    :param dataset_location: The location of the translation JSON.
+    :return: List of the continents
+    """
+    ### Loading the file ###
+    try:
+        dataset = json.load(open(dataset_location))
+        dataset = pd.read_json(json.dumps(dataset,ensure_ascii=False).encode("latin-1").decode("cp1252"))
+    except Exception:
+        log.error("BioPython:Phylogeny:find_continents_from_country:ERROR: Failed to open %s as json."%dataset_location)
+        return [np.nan for country in countries]
 
+    output_list = []
+
+    for country in countries:
+        try:
+            output_list.append(dataset.loc[dataset["country"]==country,"continent"].item())
+        except:
+            output_list.append("")
+
+    return output_list
 
 ### CORE FUNCTIONS ###
 def recur_clades(tree_tup,recursion_number=0,distance=0.0,target_distance=1,n_clades=0):
@@ -245,6 +271,6 @@ def find_correct_comma(string):
 
 if __name__ == '__main__':
     log.basicConfig(level=log.DEBUG)
-    t = Tree("/home/ediggins/BioInformatics/BioPython/tree.dnd",name="test")
-    #t = phylo.Tree("/media/Mercury/SRR_SALMONELLA_FILES/salmonella.dnd",name="test")
+    #t = Tree("/home/ediggins/BioInformatics/BioPython/tree.dnd",name="test")
+    t = phylo.Tree("/media/Mercury/SRR_SALMONELLA_FILES/salmonella.dnd",name="test")
     recur_clades(t.tree)

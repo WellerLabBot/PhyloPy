@@ -12,6 +12,35 @@ import os
 from tqdm import tqdm
 
 ### BASE FUNCTIONS ###
+def gzip(directory,filetype=".fastq"):
+    """
+    G zips all files of type filetype in the directory.
+    :param directory: The directory to zip into
+    :param filetype: The filetype to zip
+    :return: None
+    """
+    print("BioPython:Tools:BioPy_SRA:gzip: Attempting to zip all %s files in %s."%(filetype,directory))
+
+    try:
+        os.chdir(directory)
+    except Exception:
+        print("BioPython:Tools:BioPy_SRA:gzip:ERROR failed to find directory %s. Please try again."%directory)
+
+    files = [file for file in os.listdir() if file[-len(filetype):] == filetype]
+
+    print("BioPython:Tools:BioPy_SRA:gzip: Found %s files with extension %s."%(len(files),filetype))
+    fails = []
+    for file in tqdm(files,desc="Zipping files."):
+        tqdm.write("BioPython:Tools:BioPy_SRA:gzip: Zipping %s."%file)
+        try:
+            os.system("gzip %s 1>/dev/null 2>/dev/null"%file)
+        except Exception:
+            tqdm.write("BioPython:Tools:BioPy_SRA:gzip:WARNING: zip failed on %s."%file)
+            fails.append(file)
+
+    print("BioPython:Tools:BioPy_SRA:gzip: Finished zipping %s. Successfully zipped %s of %s (%% %s)."%(directory,len(files)-len(fails),len(files),100*(1-(len(fails)/len(files)))))
+    return True
+
 
 ### FUNCTIONS ###
 def download_fasterq(inp,output_location,options=None,echo=True):
@@ -141,5 +170,4 @@ def generate_mashtree(directory,output_name,echo=True):
 
         print("BioPython:Tools:BioPy_SRA:generate_mashtree:INFO: Saved %s in %s."%(output_name,directory))
 if __name__ == '__main__':
-    download_fasterq("/home/ediggins/BioInformatics/SRA Toolkit/SRA_Files/phylo_list.txt","/media/Mercury/SRR_SALMONELLA_FILES")
-    generate_mashtree("/media/Mercury/SRR_SALMONELLA_FILES","salmonella.dnd")
+    gzip("/media/Mercury/SRR_SALMONELLA_FILES")
